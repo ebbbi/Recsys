@@ -1,56 +1,56 @@
-import pandas as pd
 import numpy as np
+import os 
 
 import torch
 from torch.optim import Adam
 
-from utils import BPRLoss, recall_at_10
+from utils import BPRLoss, recall_batch
 
-def run(model, train_loader, valid_data, train, pp, args):
-    model=model.to(args.device)
-    bprloss=BPRLoss()
-    optimizer=Adam(model.parameters(), lr = args.lr)
-    best_recall=0
+def run(model, train_loader, dataset, args):
+    model = model.to(args.device)
+    bprloss = BPRLoss()
+    optimizer = Adam(model.parameters(), lr = args.lr)
+    best_recall = 0
+    
+    print("START TRAIN")
+    
     for epoch in range(args.epochs):
         model.train()
-        total_loss=0
+        total_loss = 0
         for user, item in train_loader:
-            nega_user, nega_item=pp.negative_sampling(user.numpy())
-            ux=torch.cat([user, nega_user]).to(args.device)
-            ix=torch.cat([item, nega_item]).to(args.device)
 
+            nega_user, nega_item = dataset.negative_sampling(user.numpy())
+            u = torch.cat([user, nega_user]).to(args.device)
+            i = torch.cat([item, nega_item]).to(args.device)
+            
             optimizer.zero_grad()
+            pred = model(u, i)   
 
-            pred=model(ux, ix)   #(user,pos)...(user,neg)*3
-            pos, neg=torch.split(pred, [len(user), len(user)*3])
-            pos=pos.view(-1, 1).repeat(1, 3).view(-1)  #(user, pos),(user, pos),(user, pos)
-            loss=bprloss(pos, neg)  
+            pos, nega = torch.split(pred, [len(user), len(user)*3])
+            pos = pos.view(-1, 1).repeat(1, 3).view(-1)
+            loss = bprloss(pos, nega)  
 
             loss.backward()
             optimizer.step()
-            total_loss+=loss.item()
+            total_loss += loss.item()
 
         model.eval()
-        recall=0
-        pred_items=[]
+        recall = 0.0
         with torch.no_grad():
-            U=pp.all_users
-            I=torch.tensor(pp.all_items).to(args.device)
-            for u in U:
-                user=torch.tensor([u]*len(I)).to(args.device)
-                pred=model(user, I)
-                train_idx=train[u]
-                pred = pred.to("cpu").detach().numpy()
-                pred[train_idx]=-np.inf
-                top=np.argpartition(pred, -10)[-10:]
-                pred_items.append(top)
-                recall+=recall_at_10(valid_data[u], top)
+            pred = model.user_embedding.weight @ model.item_embedding.weight.T
+            pred = pred.to("cpu").detach().numpy()
+            for u, v in dataset.train.items():
+                pred[u, v] = -np.inf
+            top = np.argpartition(pred, -10)[:, -10:]
+            recall = recall_batch(dataset.valid, top)
 
-        if recall>best_recall:
-            best_recall=recall
-            if not os.path.exists(args.save_dir_path):
-                os.makedirs(args.save_dir_path)
-                torch.save(model, f"{args.save_dir_path}/best_model.pt")
-                torch.save(model.state_dict(), f"{args.save_dir_path}/state_dict.pt")
+        if recall > best_recall:
+            best_recall = recall
+            if not os.path.exists(args.save_dir):
+                os.makedirs(args.save_dir)
+            torch.save(model, f"{args.save_dir}/best_model.pt")
+            torch.save(model.state_dict(), f"{args.save_dir}/state_dict.pt")
 
-        print(f'epoch: {epoch}, loss: {total_loss/len(train_loader)}, recall : {recall}')      
+        print(f'epoch: {epoch}, loss: {total_loss/len(train_loader)}, recall: {recall}')      
+        
+    print(best_recall)
