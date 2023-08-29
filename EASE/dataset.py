@@ -1,5 +1,8 @@
 import pandas as pd
 import numpy as np
+import os
+
+import torch 
 from scipy.sparse import dok_matrix
 
 class Preprocessing():
@@ -13,14 +16,14 @@ class Preprocessing():
         self.all_users = self.data['user_id'].unique()
         self.user_itemset = self.data.groupby("user_id")["item_id"].apply(list).to_dict()
         self.train, self.valid = self.split()
-        self.mat=self.make_matrix()
+        self.mat = self.make_matrix()
             
     def split(self):
         train = {}
         valid = {}
+        np.random.seed(42)
         for u, v in self.user_itemset.items():
-            valitem = v[-2:]
-            valitem += np.random.choice(v[int(len(v)*0.2):], 8, replace = False).tolist()
+            valitem = np.random.choice(v[int(len(v)*0.2):], 10, replace = False).tolist()
             #valitem=np.random.choice(v[int(len(v)*0.4):], 10, replace = False).tolist()
             trainitem = list(set(v)-set(valitem))
             train[u] = trainitem
@@ -43,14 +46,8 @@ class Preprocessing():
         return torch.sparse.FloatTensor(indices, value, coo.shape).to_dense()
     
 def load_data(args):
-    rating_df = pd.read_csv(os.path.join(args.data_dir, 'train_ratings.csv'))
-    rating_df = rating_df.sort_values(["user", "time"])
+    rating_df = pd.read_csv(os.path.join(args.data_dir, 'ratings.csv'))
+    rating_df = rating_df.sort_values(["user", "timestamp"])
     dataset = Preprocessing(rating_df)
-        
-    data={
-        "train_data":dataset.mat,
-        "validset":dataset.valid,
-        "dataset":dataset
-    }
     
-    return data
+    return dataset.mat, dataset.valid
