@@ -1,11 +1,9 @@
-import pandas as pd
-import numpy as np
 import os
 
 import torch
 from torch.optim import Adam
 
-from utils import recall_at_10
+from utils import recall_batch
 
 def run(model, train_loader, dataset, args):
     best_recall = 0
@@ -30,7 +28,7 @@ def run(model, train_loader, dataset, args):
             score += dataset.train_mask.to(args.device)
             _, idx = torch.topk(score, k=10)
             pred_items = idx.to("cpu").detach().numpy()
-            recall = recall_at_10(dataset.valid, pred_items)
+            recall = recall_batch(dataset.valid, pred_items)
             
             if recall > best_recall:
                 best_recall = recall
@@ -39,4 +37,6 @@ def run(model, train_loader, dataset, args):
                 torch.save(model, f"{args.save_dir_path}/best_model.pt")
                 torch.save(model.state_dict(), f"{args.save_dir_path}/state_dict.pt")
         
-        print(f'epoch: {epoch}, loss: {total_loss/len(train_loader)}, recall : {recall}')        
+        print(f'epoch: {epoch}, loss: {total_loss/len(train_loader)}, recall: {recall}')     
+        
+    print(best_recall)   

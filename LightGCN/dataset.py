@@ -2,9 +2,9 @@ import pandas as pd
 import numpy as np
 from collections import defaultdict
 import os
+from utils import mat_to_tensor
 
 from scipy.sparse import dok_matrix
-from utils import mat_to_tensor
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -17,9 +17,9 @@ class BPRDataset(Dataset):
         neg_items = []
         for u in dataset.all_users:  #use all
             for i in dataset.train[u]: #negative sampling - 2
-                users += [u]*2
-                pos_items += [i]*2
-                neg_items += np.random.choice(dataset.user_negative_itemset[u], 2, replace = False).tolist()
+                users += [u]*1
+                pos_items += [i]*1
+                neg_items += np.random.choice(dataset.user_negative_itemset[u], 1, replace = False).tolist()
 
         self.users, self.pos, self.nega = torch.tensor(users), torch.tensor(pos_items), torch.tensor(neg_items)
         
@@ -32,8 +32,7 @@ class BPRDataset(Dataset):
     
 class Preprocessing():
     def __init__(self, data):
-        self.data=data
-        
+        self.data = data
         self.data["user_id"], self.user_map = pd.factorize(self.data["user"])
         self.data["item_id"], self.item_map = pd.factorize(self.data["item"])
         self.n_users = max(self.data["user_id"])+1
@@ -59,7 +58,7 @@ class Preprocessing():
         valid = {}
         
         for u, v in self.user_itemset.items():
-            valitem = np.random.choice(v[int(len(v)*0.4):], 10, replace = False).tolist()
+            valitem = np.random.choice(v[int(len(v)*0.2):], 10, replace = False).tolist()
             trainitem = list(set(v)-set(valitem))
             train[u] = trainitem
             valid[u] = valitem
@@ -95,17 +94,10 @@ class Preprocessing():
         return train_mask, sub_mask
 
 def load_data(args):
-    rating_df = pd.read_csv(os.path.join(args.data_dir, 'train_ratings.csv'))
-    rating_df = rating_df.sort_values(["user", "time"])
+    rating_df = pd.read_csv(os.path.join(args.data_dir, 'ratings.csv'))
+    rating_df = rating_df.sort_values(["user", "timestamp"])
     dataset = Preprocessing(rating_df)
-    train_data=BPRDataset(dataset)
-    train_loader=DataLoader(train_data, batch_size = args.batch_size, shuffle = True)
+    train_data = BPRDataset(dataset)
+    train_loader = DataLoader(train_data, batch_size = args.batch_size, shuffle = True)
     
-    data={
-        
-        "dataset" : dataset,
-        "train_loader" : train_loader,
-        "valid" : dataset.valid
-    }
-    
-    return data
+    return train_loader, dataset
